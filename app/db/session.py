@@ -1,11 +1,12 @@
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import URL
-from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 
+from typing import Generator
 
+from sqlalchemy.orm import Session, sessionmaker
 # PostgreSQL connection URL
 database_url = URL.create(
     drivername="postgresql+psycopg",
@@ -30,3 +31,12 @@ SessionLocal = sessionmaker(
     autoflush=False,
     expire_on_commit=False,
 )
+
+
+def get_db() -> Generator[Session, None, None]:
+    db = SessionLocal()
+
+    try:
+        yield db
+    finally:
+        db.close()
