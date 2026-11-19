@@ -1,0 +1,31 @@
+
+# Python sanal ortamı
+.venv/
+venv/
+
+# Python önbellek dosyaları
+__pycache__/
+*.py[cod]
+
+# Ortam değişkenleri ve gizli bilgiler
+.env
+.env.*
+!.env.example
+
+# Test ve coverage çıktıları
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Kod analiz araçları
+.ruff_cache/
+.mypy_cache/
+
+# IDE ve işletim sistemi dosyaları
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Log dosyaları
+*.log
