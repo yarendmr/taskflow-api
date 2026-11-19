@@ -1,22 +1,14 @@
+
 from fastapi import FastAPI
 
-app= FastAPI(
-    title= "Taskflow API",
-    description= "Kullanıcı, proje ve görev yönetimi için REST API",
-    version= "0.1.0",
+from app.api.v1.routers import system
+from app.core.config import settings
+
+
+app = FastAPI(
+    title=settings.app_name,
+    description=settings.app_description,
+    version=settings.app_version,
 )
 
-@app.get("/")
-def root():
-    return {
-        "message": "Taskflow API çalışıyor!",
-        "version": "0.1.0"
-    }
-
-@app.get("/health")
-def health_check():
-    return {
-        "status": "healthy",
-        "message": "API sağlıklı bir şekilde çalışıyor."
-    }
-
+app.include_router(system.router)
