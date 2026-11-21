@@ -1,5 +1,5 @@
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,6 +23,15 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    # JWT Authentication settings
+    jwt_secret_key: SecretStr
+    access_token_expire_minutes: int = Field(
+        default=30,
+        ge=1,
+        le=1440,
+    )
+
 
 
 settings = Settings()

@@ -1,29 +1,24 @@
-
 # TaskFlow API
 
-A RESTful task and project management API built with Python, FastAPI, and PostgreSQL.
+A RESTful backend API for user, project, and task management, built with Python, FastAPI, and PostgreSQL.
 
 ## Overview
 
-TaskFlow API is a backend development project designed to provide a structured, secure, and maintainable solution for managing users, projects, and tasks.
+TaskFlow API is an incremental backend development project focused on clean API design, modular architecture, secure authentication, database integration, and automated testing.
 
-The project focuses on REST API design, modular software architecture, authentication, database integration, secure password management, automated testing, and software engineering best practices.
+The long-term goal is to support users, projects, tasks, permissions, and common task-management workflows. Features listed as planned are **not yet implemented**.
 
-The application is being developed incrementally, with new features, tests, and infrastructure components added throughout the development process.
-
-**Project Status:** In Development
-
-**Current Version:** 0.1.0
+**Project status:** In Development  
+**Current API version:** 0.1.0
 
 ## Tech Stack
 
 ### Backend
 - Python 3.12
-- FastAPI
-- Uvicorn
-- Pydantic
-- Pydantic Settings
-- Pydantic EmailStr
+- FastAPI and Uvicorn
+- Pydantic and Pydantic Settings
+- `EmailStr` for email validation
+- `python-multipart` for OAuth2 form submissions
 
 ### Database
 - PostgreSQL
@@ -31,84 +26,78 @@ The application is being developed incrementally, with new features, tests, and 
 - Psycopg 3
 - Alembic
 
-### Security
-- pwdlib
-- Argon2 password hashing
-- Email validation
-- Duplicate email detection
+### Authentication and Security
+- `pwdlib` with Argon2 password hashing
+- PyJWT with HS256-signed access tokens
+- OAuth2 password-form login and Bearer token authentication
+- Environment-based secret configuration
 
 ### Testing
 - pytest
-- HTTPX
-- SQLite (isolated in-memory test database)
+- FastAPI TestClient / HTTPX
+- In-memory SQLite for isolated API tests
 
-### Planned Technologies
-- JWT Authentication
+### Planned Tools
 - Ruff
 - Docker
 - GitHub Actions
 
 ## Implemented Features
 
-### API Architecture
-- REST API initialization with FastAPI
-- Modular project structure
-- API routing using APIRouter
-- API versioning structure (v1)
-- Interactive Swagger UI documentation
-- OpenAPI specification
-- Root and health check endpoints
+### API and Architecture
+- REST API built with FastAPI
+- Modular routers, schemas, services, models, and database modules
+- Versioned authentication and user routes under `/api/v1`
+- Root and health-check endpoints
+- Automatic OpenAPI specification and Swagger UI
 
-### Database Integration
-- PostgreSQL database integration
-- SQLAlchemy ORM configuration
-- Database session management
-- Environment-based configuration
-- User database model
-- Alembic migration management
-- Initial database migration for the users table
+### Database
+- PostgreSQL connection and SQLAlchemy session management
+- SQLAlchemy `User` model
+- Initial Alembic migration for the `users` table
+- Configuration loaded from environment variables and `.env`
 
 ### User Registration
-- User registration endpoint
-- Pydantic request and response validation
-- Email address format validation
-- Password length validation
-- Secure password hashing using Argon2
-- Duplicate email detection
-- HTTP 409 Conflict responses for existing emails
-- HTTP 422 responses for invalid request data
-- User registration service layer
-- Password hash exclusion from API responses
+- Registration with email and password
+- Email format and password length validation (8–128 characters)
+- Argon2 password hashing before database storage
+- Duplicate email detection (`409 Conflict`)
+- Safe API responses that exclude passwords and password hashes
+
+### Authentication
+- Login using an OAuth2-compatible form (`username` contains the email address)
+- Credential verification against stored Argon2 hashes
+- Rejection of unknown users, incorrect passwords, and inactive accounts
+- Signed JWT access tokens with configurable expiration
+- JWT signature, expiration, token type, and user ID validation
+- Protected current-user endpoint
+- Database check that the token's user exists and is active
 
 ### Automated Testing
-- Root endpoint test
-- Health check endpoint test
+- Root and health-check endpoint tests
 - Password hashing and verification tests
-- Successful user registration test
-- Duplicate email registration test
-- Invalid email validation test
-- Invalid password length test
-- Isolated SQLite database for registration tests
+- Registration success, duplicate email, and invalid-input tests
+- JWT creation, signature, and expiration tests
+- Login success and failure tests
+- Protected endpoint access tests, including invalid/expired tokens and inactive/missing users
+- Isolated SQLite database fixtures for registration and authentication tests
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | / | Root endpoint |
-| GET | /health | Application health check |
-| POST | /api/v1/auth/register | Register a new user |
-| GET | /docs | Swagger UI documentation |
-| GET | /openapi.json | OpenAPI specification |
+| Method | Endpoint | Description | Authentication |
+|--------|----------|-------------|----------------|
+| GET | `/` | Root endpoint | No |
+| GET | `/health` | Application health check | No |
+| POST | `/api/v1/auth/register` | Register a new user | No |
+| POST | `/api/v1/auth/login` | Log in and receive an access token | No |
+| GET | `/api/v1/users/me` | Retrieve the current user's profile | Bearer token |
+| GET | `/docs` | Interactive Swagger UI | No |
+| GET | `/openapi.json` | OpenAPI specification | No |
 
-### User Registration
+### Register a User
 
-**Endpoint:**
-
-```http
-POST /api/v1/auth/register
-```
-
-**Example Request:**
+**Request:** `POST /api/v1/auth/register`  
+**Content type:** `application/json`
 
 ```json
 {
@@ -117,7 +106,7 @@ POST /api/v1/auth/register
 }
 ```
 
-**Successful Response — 201 Created:**
+**Example success response — `201 Created`:**
 
 ```json
 {
@@ -128,11 +117,9 @@ POST /api/v1/auth/register
 }
 ```
 
-The response does not expose the user's plaintext password or stored password hash.
+The ID and timestamp shown above are illustrative; actual values are generated by the database. Neither the plaintext password nor its hash is returned.
 
-The `id` and `created_at` values are generated by the database.
-
-**Duplicate Email — 409 Conflict:**
+For an already registered email, the API returns `409 Conflict`:
 
 ```json
 {
@@ -140,11 +127,46 @@ The `id` and `created_at` values are generated by the database.
 }
 ```
 
-**Invalid Request — 422 Unprocessable Content:**
+Invalid email formats or passwords outside the 8–128 character range return `422` validation responses.
 
-Invalid email addresses or passwords that do not satisfy the configured length requirements are rejected through Pydantic validation.
+### Log In
 
-Passwords must contain between 8 and 128 characters.
+**Request:** `POST /api/v1/auth/login`  
+**Content type:** `application/x-www-form-urlencoded`
+
+The form uses these fields:
+- `username`: registered email address
+- `password`: account password
+
+**Example success response — `200 OK`:**
+
+```json
+{
+  "access_token": "<signed-jwt-access-token>",
+  "token_type": "bearer"
+}
+```
+
+Invalid credentials or an inactive account return `401 Unauthorized`:
+
+```json
+{
+  "detail": "Incorrect email or password."
+}
+```
+
+### Access a Protected Endpoint
+
+Send the access token in the `Authorization` header:
+
+```http
+GET /api/v1/users/me
+Authorization: Bearer <signed-jwt-access-token>
+```
+
+A valid token belonging to an existing, active user returns the user's profile without password fields. Missing, invalid, expired, or otherwise unauthorized tokens return `401 Unauthorized`.
+
+**Security note:** JWT payloads are signed, **not encrypted**. Do not put passwords or other secrets in token claims. Treat access tokens as credentials and do not share them publicly.
 
 ## Project Structure
 
@@ -158,10 +180,12 @@ taskflow-api/
 │   └── script.py.mako
 ├── app/
 │   ├── api/
+│   │   ├── deps.py
 │   │   └── v1/
 │   │       └── routers/
 │   │           ├── auth.py
-│   │           └── system.py
+│   │           ├── system.py
+│   │           └── users.py
 │   ├── core/
 │   │   ├── config.py
 │   │   └── security.py
@@ -171,12 +195,17 @@ taskflow-api/
 │   ├── models/
 │   │   └── user.py
 │   ├── schemas/
+│   │   ├── token.py
 │   │   └── user.py
 │   ├── services/
+│   │   ├── auth_service.py
 │   │   └── user_service.py
 │   └── main.py
 ├── tests/
+│   ├── conftest.py
 │   ├── test_auth.py
+│   ├── test_jwt.py
+│   ├── test_login.py
 │   ├── test_main.py
 │   └── test_security.py
 ├── .env.example
@@ -186,239 +215,191 @@ taskflow-api/
 └── README.md
 ```
 
-Empty `__init__.py` files are omitted from this overview for readability.
-
-### Directory Responsibilities
+Empty `__init__.py` files and local-only files such as `.venv/` and `.env` are omitted from this overview.
 
 | Directory | Responsibility |
-|-----------|---------------|
-| app/api | API routers and endpoint definitions |
-| app/core | Application configuration and security utilities |
-| app/db | Database engine, sessions, and base model |
-| app/models | SQLAlchemy database models |
-| app/schemas | Pydantic validation and response schemas |
-| app/services | Business logic and database operations |
-| alembic | Database schema migrations |
-| tests | Automated application tests |
+|-----------|----------------|
+| `app/api` | HTTP routes and shared authentication dependencies |
+| `app/core` | Application configuration, password security, and JWT utilities |
+| `app/db` | Database engine, session management, and SQLAlchemy base |
+| `app/models` | SQLAlchemy database models |
+| `app/schemas` | Pydantic request and response schemas |
+| `app/services` | Business logic for registration and authentication |
+| `alembic` | Version-controlled database schema migrations |
+| `tests` | Automated tests and shared test fixtures |
 
 ## Installation
 
 ### Prerequisites
 
-Before starting, ensure that the following tools are installed:
-
 - Python 3.12
-- PostgreSQL
+- PostgreSQL running locally
 - Git
+
+The commands below are for **Windows PowerShell**.
 
 ### 1. Clone the Repository
 
-```bash
+```powershell
 git clone https://github.com/yarendmr/taskflow-api.git
 cd taskflow-api
 ```
 
-### 2. Create a Virtual Environment
+### 2. Create and Activate a Virtual Environment
 
 ```powershell
 py -3.12 -m venv .venv
-```
-
-### 3. Activate the Virtual Environment
-
-On Windows PowerShell:
-
-```powershell
 .\.venv\Scripts\Activate.ps1
 ```
 
-### 4. Install Dependencies
+### 3. Install Dependencies
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-### 5. Database Configuration
+### 4. Configure PostgreSQL
 
-TaskFlow API uses PostgreSQL as its primary database.
+Create a database named `taskflow_db` and a dedicated login role named `taskflow_user`. Set `taskflow_user` as the database owner and grant it the permissions needed to connect and manage application tables. Use your own secure password.
 
-Before running the application:
-
-1. Ensure that PostgreSQL is installed and running.
-2. Create a PostgreSQL database named `taskflow_db`.
-3. Create a dedicated database user named `taskflow_user`.
-4. Assign ownership of `taskflow_db` to `taskflow_user`.
-5. Configure the database credentials using environment variables.
-
-Copy the example environment configuration:
+Copy the example configuration file:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Update the `.env` file with your PostgreSQL credentials:
+Edit `.env` with your local settings:
 
 ```dotenv
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=taskflow_db
 DB_USER=taskflow_user
-DB_PASSWORD=your_database_password
+DB_PASSWORD=replace_with_your_database_password
+
+JWT_SECRET_KEY=replace_with_a_secure_random_secret
+ACCESS_TOKEN_EXPIRE_MINUTES=30
 ```
 
-Replace `your_database_password` with your actual database password.
+Generate a random JWT signing secret locally:
 
-**Security Note:** Never commit `.env` files, database passwords, or other secrets to version control.
+```powershell
+python -c "import secrets; print(secrets.token_hex(32))"
+```
 
-### 6. Apply Database Migrations
+Copy the generated value into `JWT_SECRET_KEY` in your **local** `.env` file. The project expects a signing secret and uses a default access-token lifetime of 30 minutes, configurable through the environment.
 
-Run the following command to create the required database tables:
+**Never commit `.env`, database passwords, JWT secrets, or real access tokens.** The `.env.example` file must contain placeholders only.
+
+### 5. Apply Database Migrations
 
 ```powershell
 alembic upgrade head
 ```
 
-Verify the applied migration:
+Check the applied revision:
 
 ```powershell
 alembic current
 ```
 
-The initial migration creates the `users` table and its associated email index.
+The initial migration creates the `users` table and its unique email index.
 
-### 7. Run the Application
-
-Start the FastAPI development server:
+### 6. Run the API
 
 ```powershell
 python -m uvicorn app.main:app --reload
 ```
 
-The application will be available at:
+- API: http://127.0.0.1:8000
+- Swagger UI: http://127.0.0.1:8000/docs
+- OpenAPI schema: http://127.0.0.1:8000/openapi.json
 
-**API:** http://127.0.0.1:8000
-
-**Swagger UI:** http://127.0.0.1:8000/docs
-
-**OpenAPI Schema:** http://127.0.0.1:8000/openapi.json
-
-The `--reload` option is intended for local development.
+The `--reload` flag is intended for local development, not production deployment.
 
 ## Running Tests
 
-TaskFlow API uses pytest for automated testing.
-
-Run the complete test suite:
+Run the entire suite:
 
 ```powershell
 python -m pytest -v
 ```
 
-Run individual test modules:
-
-**API endpoint tests:**
+Run specific modules:
 
 ```powershell
 python -m pytest tests/test_main.py -v
-```
-
-**Password security tests:**
-
-```powershell
 python -m pytest tests/test_security.py -v
-```
-
-**User registration tests:**
-
-```powershell
 python -m pytest tests/test_auth.py -v
+python -m pytest tests/test_jwt.py -v
+python -m pytest tests/test_login.py -v
 ```
 
 ### Testing Strategy
 
-The current automated test suite covers:
+- `tests/conftest.py` defines reusable fixtures for an isolated SQLite database and FastAPI `TestClient`.
+- Each database-dependent API test uses a fresh in-memory database.
+- FastAPI dependency overrides direct registration and authentication operations to the test database rather than the development PostgreSQL database.
+- JWT tests cover valid, incorrectly signed, and expired tokens.
+- Login and protected-endpoint tests cover valid credentials, incorrect credentials, inactive accounts, and unauthorized access.
 
-- Root endpoint functionality
-- Health check functionality
-- Secure password hashing
-- Correct and incorrect password verification
-- Successful user registration
-- Duplicate email handling
-- Invalid email validation
-- Password length validation
-- Exclusion of sensitive password information from responses
-
-Registration tests use an isolated in-memory SQLite database with FastAPI dependency overrides.
-
-Each registration test receives a fresh test database, preventing modifications to the development PostgreSQL database.
-
-PostgreSQL-specific integration testing and additional test coverage are planned for future development.
+The current test suite contains **21 test cases** across the API, password security, registration, JWT, and login/protected-user modules. PostgreSQL-specific integration testing remains a planned improvement; SQLite tests do not replace it.
 
 ## Database Schema
 
-### Users Table
+### `users` Table
 
-The initial database migration creates the `users` table.
+| Column | Type | Purpose |
+|--------|------|---------|
+| `id` | Integer | Primary key |
+| `email` | VARCHAR(255) | Unique email address |
+| `hashed_password` | VARCHAR(255) | Password hash (Argon2) |
+| `is_active` | Boolean | Whether the user is allowed to authenticate |
+| `created_at` | Timestamp with time zone | Account creation time |
 
-| Column | Type | Description |
-|--------|------|-------------|
-| id | Integer | Primary key |
-| email | VARCHAR(255) | Unique user email |
-| hashed_password | VARCHAR(255) | Argon2 password hash |
-| is_active | Boolean | Account activation status |
-| created_at | Timestamp with time zone | Account creation timestamp |
-
-The email column has a unique index to prevent duplicate registrations.
-
-Password hashes are stored instead of plaintext passwords.
-
-Database schema changes are managed through Alembic migrations.
+The email column has a unique index. Alembic manages schema changes; passwords are never stored in plaintext.
 
 ## Development Roadmap
 
 ### Completed
 
-- [x] Initial FastAPI setup
-- [x] Modular API architecture
-- [x] Basic API endpoints
-- [x] Swagger UI documentation
-- [x] PostgreSQL database integration
-- [x] SQLAlchemy ORM configuration
-- [x] Environment-based application settings
-- [x] Database session management
-- [x] Initial User model and database migration
-- [x] User registration endpoint
-- [x] Pydantic request and response validation
-- [x] Secure password hashing with Argon2
-- [x] Duplicate email validation
-- [x] Isolated automated registration tests
+- [x] Initial FastAPI setup and project structure
+- [x] Modular routers, services, schemas, and models
+- [x] Root and health-check endpoints
+- [x] OpenAPI and Swagger UI
+- [x] PostgreSQL connection and SQLAlchemy session management
+- [x] Initial `User` model and Alembic migration
+- [x] Environment-based application configuration
+- [x] User registration and input validation
+- [x] Secure Argon2 password hashing and verification
+- [x] Duplicate email handling
+- [x] User login with OAuth2 password form
+- [x] JWT access token creation and validation
+- [x] Protected `/api/v1/users/me` endpoint
+- [x] Automated registration, login, JWT, and protected-endpoint tests
 
 ### Planned
 
-- [ ] User login and authentication
-- [ ] JWT access token generation and validation
-- [ ] Protected API endpoints
-- [ ] Role-based access control
 - [ ] Additional database models and migrations
+- [ ] Role-based access control and finer-grained permissions
 - [ ] Project management endpoints
 - [ ] Task management endpoints
-- [ ] User-project relationships
-- [ ] Task assignment and status management
+- [ ] User-project relationships and task assignments
 - [ ] Filtering, sorting, and pagination
-- [ ] Expanded unit and integration testing
-- [ ] API error handling improvements
-- [ ] Ruff code quality checks
+- [ ] Refresh token strategy and token revocation, if needed
+- [ ] Rate limiting and additional authentication hardening
+- [ ] Expanded PostgreSQL integration and security testing
+- [ ] API error-handling improvements
+- [ ] Ruff linting and code-quality checks
 - [ ] Docker containerization
-- [ ] CI pipeline with GitHub Actions
-- [ ] Final documentation and project improvements
+- [ ] GitHub Actions CI pipeline
+- [ ] Final documentation and deployment preparation
 
 ## Development Approach
 
-TaskFlow API is being developed incrementally with an emphasis on maintainability, modularity, security, and automated testing.
+TaskFlow API is developed incrementally. HTTP routing, business logic, input validation, configuration, and database operations are separated into dedicated modules. Database schema changes are versioned with Alembic, while automated tests are run as new features are introduced.
 
-The project separates API routing, business logic, data validation, and database operations into dedicated modules.
-
-Database schema changes are version-controlled using Alembic, while automated tests are used to verify existing functionality as the application evolves.
+The project is **still in development**. Passing tests and having JWT authentication in place do not by themselves mean that the API is production-ready.
 
 ## License
 

@@ -1,59 +1,11 @@
 
 import pytest
 
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.main import app
-from app.db.base import Base
-from app.db.session import get_db
-from app.models.user import User
 from app.core.security import verify_password
-
-
-@pytest.fixture
-def test_engine():
-    """Create an isolated in-memory database for each test."""
-
-    engine = create_engine(
-        "sqlite+pysqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-
-    Base.metadata.create_all(bind=engine)
-
-    yield engine
-
-    Base.metadata.drop_all(bind=engine)
-    engine.dispose()
-
-
-@pytest.fixture
-def client(test_engine):
-    """Use the isolated test database for API requests."""
-
-    TestSessionLocal = sessionmaker(
-        bind=test_engine,
-        autoflush=False,
-    )
-
-    def override_get_db():
-        db = TestSessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app.dependency_overrides[get_db] = override_get_db
-
-    try:
-        with TestClient(app) as test_client:
-            yield test_client
-    finally:
-        app.dependency_overrides.pop(get_db, None)
+from app.models.user import User
 
 
 def test_register_success(client, test_engine):
