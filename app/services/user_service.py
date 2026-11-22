@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.models.user import User
-from app.schemas.user import UserCreate
+from app.schemas.user import UserCreate, UserProfileUpdate
 
 
 class UserAlreadyExistsError(Exception):
@@ -63,3 +63,20 @@ def create_user(db: Session, user_data: UserCreate) -> User:
     db.refresh(new_user)
 
     return new_user
+
+
+def update_user_profile(
+    db: Session,
+    user: User,
+    profile_data: UserProfileUpdate,
+) -> User:
+    """Update the authenticated user's profile."""
+
+    # Update only explicitly provided fields
+    if "full_name" in profile_data.model_fields_set:
+        user.full_name = profile_data.full_name
+
+        db.commit()
+        db.refresh(user)
+
+    return user

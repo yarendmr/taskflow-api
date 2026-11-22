@@ -29,3 +29,9 @@ Thumbs.db
 
 # Log dosyaları
 *.log
+
+# Coverage reports
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml

@@ -33,7 +33,7 @@ def test_invalid_token_signature():
             "iat": now,
             "exp": now + timedelta(minutes=5),
         },
-        "different-signing-secret",
+        "wrong-signing-key-for-jwt-tests-2026-abcdef",
         algorithm="HS256",
     )
 
