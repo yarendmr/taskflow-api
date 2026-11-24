@@ -6,7 +6,7 @@ A RESTful backend API for user, project, and task management, built with Python,
 
 TaskFlow API is an incremental software engineering project focused on modular architecture, secure authentication and authorization, relational database design, and automated testing.
 
-The long-term goal is to manage users, projects, and tasks through a maintainable REST API. **User registration, login, profile management, and initial administrator operations are implemented.** Project and task management features are planned, not yet available.
+The API currently implements **user registration, JWT authentication, profile management, role-based administrator operations, project management, and project-scoped task management**. Project and task resources are protected by ownership checks, and projects have cascading task deletion.
 
 **Project status:** In Development  
 **Current API version:** `0.1.0`
@@ -64,9 +64,11 @@ The long-term goal is to manage users, projects, and tasks through a maintainabl
 ### Database Integration
 
 - PostgreSQL connection and SQLAlchemy session management
-- `User` model and Alembic-managed schema migrations
-- Initial users-table migration (`b50570e674cd`)
-- User profile and role migration (`e9e1baaf2074`)
+- `User`, `Project`, and `Task` SQLAlchemy models
+- Alembic-managed schema migrations for users, user profiles/roles, projects, and tasks
+- Foreign key relationships: `projects.owner_id → users.id` and `tasks.project_id → projects.id`
+- Database-enforced `ON DELETE CASCADE` from projects to tasks
+- Indexed owner/project foreign keys
 - Environment-based database configuration
 
 ### Registration and Authentication
@@ -103,6 +105,27 @@ The long-term goal is to manage users, projects, and tasks through a maintainabl
 
 **Admin provisioning:** Public registration does **not** grant admin privileges, and this project does not yet provide an admin-provisioning API or CLI. Admin functionality is currently verified with temporary admin records created inside isolated tests. Do not alter production account roles manually as a substitute for a secure provisioning process.
 
+### Project Management (Day 7)
+
+- Create, list, retrieve, partially update, and delete projects
+- Every project is owned by its creator (`owner_id` is set server-side)
+- Ownership-aware read, update, and deletion operations
+- Project statuses: `active`, `completed`, `archived`
+- Paginated project listing (`offset`, `limit`)
+- Request validation that prevents clients from setting or changing `owner_id`
+- `404 Not Found` for nonexistent projects and projects owned by another user
+
+### Task Management (Day 8)
+
+- Create, list, retrieve, partially update, and delete tasks within an owned project
+- Task statuses: `todo`, `in_progress`, `done`
+- Task priorities: `low`, `medium`, `high` (default `medium`)
+- Optional descriptions and timezone-aware due dates
+- Paginated task listing within a project (`offset`, `limit`)
+- Validation that prevents task reassignment through unapproved `project_id` fields
+- Ownership checks on every task operation, with both project and task IDs checked
+- Automatic task deletion when the parent project is deleted (`ON DELETE CASCADE`)
+
 ### Automated Testing
 
 - API smoke tests for root and health-check endpoints
@@ -114,6 +137,10 @@ The long-term goal is to manage users, projects, and tasks through a maintainabl
 - RBAC and administrator operations tests, including pagination and account activation
 - Simulated database integrity-error and rollback tests
 - Database session cleanup tests for normal and exceptional execution paths
+- Project CRUD, pagination, input validation, and cross-user ownership tests
+- Task CRUD, pagination, input validation, and cross-user ownership tests
+- Task/project URL mismatch tests
+- Cascade-deletion test with SQLite foreign key enforcement enabled
 
 ## API Endpoints
 
@@ -128,6 +155,16 @@ The long-term goal is to manage users, projects, and tasks through a maintainabl
 | `GET` | `/api/v1/admin/stats` | User counts | Admin |
 | `GET` | `/api/v1/admin/users` | Paginated user list | Admin |
 | `PATCH` | `/api/v1/admin/users/{user_id}/status` | Activate/deactivate a non-admin user | Admin |
+| `POST` | `/api/v1/projects` | Create a project | Authenticated |
+| `GET` | `/api/v1/projects` | List owned projects | Authenticated |
+| `GET` | `/api/v1/projects/{project_id}` | Get an owned project | Owner |
+| `PATCH` | `/api/v1/projects/{project_id}` | Update an owned project | Owner |
+| `DELETE` | `/api/v1/projects/{project_id}` | Delete an owned project | Owner |
+| `POST` | `/api/v1/projects/{project_id}/tasks` | Create a task in an owned project | Project owner |
+| `GET` | `/api/v1/projects/{project_id}/tasks` | List tasks in an owned project | Project owner |
+| `GET` | `/api/v1/projects/{project_id}/tasks/{task_id}` | Get a project task | Project owner |
+| `PATCH` | `/api/v1/projects/{project_id}/tasks/{task_id}` | Update a project task | Project owner |
+| `DELETE` | `/api/v1/projects/{project_id}/tasks/{task_id}` | Delete a project task | Project owner |
 | `GET` | `/docs` | Swagger UI | Public |
 | `GET` | `/openapi.json` | OpenAPI schema | Public |
 
@@ -245,6 +282,122 @@ Content-Type: application/json
 
 Returns the updated `UserResponse` on success (`200 OK`). Use `true` to reactivate a non-admin user. Missing users return `404`; attempts to change admin accounts through this endpoint return `403`; malformed data returns `422`.
 
+### 8. Create and Manage Projects
+
+Create a project:
+
+```http
+POST /api/v1/projects
+Authorization: Bearer <access-token>
+Content-Type: application/json
+```
+
+```json
+{
+  "name": "TaskFlow Backend",
+  "description": "Implement backend features and tests"
+}
+```
+
+**Example response — `201 Created`** (IDs and timestamps are illustrative):
+
+```json
+{
+  "id": 1,
+  "name": "TaskFlow Backend",
+  "description": "Implement backend features and tests",
+  "status": "active",
+  "owner_id": 1,
+  "created_at": "2026-11-24T12:00:00Z"
+}
+```
+
+`owner_id` is derived from the authenticated user and cannot be supplied or updated through the API.
+
+Additional project operations:
+
+```http
+GET /api/v1/projects?offset=0&limit=20
+GET /api/v1/projects/1
+PATCH /api/v1/projects/1
+DELETE /api/v1/projects/1
+```
+
+For project updates, only the provided allowed fields are changed. Example:
+
+```json
+{
+  "name": "TaskFlow API",
+  "status": "completed"
+}
+```
+
+`name` is required when creating a project (1–150 characters after trimming). `description` is optional (maximum 2,000 characters). Allowed statuses are `active`, `completed`, and `archived`. The update schema rejects explicit `null` for `name` and `status`; `description` may be cleared with `null`.
+
+Project lists include **only the authenticated user's projects**, ordered by ID. Pagination uses `offset >= 0` and `1 <= limit <= 100` (defaults: 0 and 20). Updates return `200 OK`, successful deletions return `204 No Content`, invalid input returns `422`, and missing or unowned projects return `404`.
+
+### 9. Create and Manage Project Tasks
+
+Create a task inside an owned project:
+
+```http
+POST /api/v1/projects/1/tasks
+Authorization: Bearer <access-token>
+Content-Type: application/json
+```
+
+```json
+{
+  "title": "Write JWT tests",
+  "description": "Add coverage for security edge cases",
+  "priority": "high",
+  "due_date": "2026-12-15T18:00:00+03:00"
+}
+```
+
+**Example response — `201 Created`:**
+
+```json
+{
+  "id": 1,
+  "project_id": 1,
+  "title": "Write JWT tests",
+  "description": "Add coverage for security edge cases",
+  "status": "todo",
+  "priority": "high",
+  "due_date": "2026-12-15T15:00:00Z",
+  "created_at": "2026-11-24T12:00:00Z"
+}
+```
+
+Timestamp formatting depends on the database and serializer; the values above are illustrative.
+
+Additional task operations:
+
+```http
+GET /api/v1/projects/1/tasks?offset=0&limit=20
+GET /api/v1/projects/1/tasks/1
+PATCH /api/v1/projects/1/tasks/1
+DELETE /api/v1/projects/1/tasks/1
+```
+
+Example partial update:
+
+```json
+{
+  "status": "in_progress",
+  "priority": "high"
+}
+```
+
+Tasks start with status `todo` and priority `medium` unless another allowed priority is provided. Allowed statuses are `todo`, `in_progress`, and `done`. Allowed priorities are `low`, `medium`, and `high`. `title` is required on creation (1–150 characters after trimming); `description` is optional (up to 2,000 characters). Due dates, when set, require a timezone offset or `Z`.
+
+Updates accept only allowed task fields. Explicit `null` is rejected for `title`, `status`, and `priority`; `description` and `due_date` can be cleared with `null`. The project is selected from the URL, not a client-controlled JSON `project_id`.
+
+Task lists are scoped to the selected, owned project and ordered by ID. Pagination defaults to `offset=0`, `limit=20`, with `limit` constrained to 1–100. Invalid data returns `422`, absent tokens return `401`, and a task or project the user cannot access returns `404`. Successful task deletion returns `204 No Content`.
+
+**Deletion behavior:** Deleting a project also removes its related task rows through the database foreign key's `ON DELETE CASCADE`. This is verified in the SQLite test suite with foreign key checks explicitly enabled; PostgreSQL integration testing remains a future enhancement.
+
 ### Authentication and Authorization Rules
 
 | Situation | Status |
@@ -254,6 +407,9 @@ Returns the updated `UserResponse` on success (`200 OK`). Use `true` to reactiva
 | Authenticated, active admin requesting an admin endpoint | `200 OK` (on successful operation) |
 | Unknown user ID in admin status update | `404 Not Found` |
 | Invalid JSON fields or validation errors | `422 Unprocessable Content` |
+| Project or task absent, or resource not owned by the user | `404 Not Found` |
+| Successful project/task creation | `201 Created` |
+| Successful project/task deletion | `204 No Content` |
 
 **Security:** JWT payloads are signed, **not encrypted**. Do not include passwords or secrets in token claims. Treat access tokens as credentials; never publish real tokens, database passwords, or JWT signing secrets.
 
@@ -264,7 +420,9 @@ taskflow-api/
 ├── alembic/
 │   ├── versions/
 │   │   ├── b50570e674cd_create_users_table.py
-│   │   └── e9e1baaf2074_add_user_profile_and_role_fields.py
+│   │   ├── e9e1baaf2074_add_user_profile_and_role_fields.py
+│   │   ├── 3ef95812025f_create_projects_table.py
+│   │   └── 94f69fd864b7_create_tasks_table.py
 │   ├── env.py
 │   ├── README
 │   └── script.py.mako
@@ -275,7 +433,9 @@ taskflow-api/
 │   │       └── routers/
 │   │           ├── admin.py
 │   │           ├── auth.py
+│   │           ├── projects.py
 │   │           ├── system.py
+│   │           ├── tasks.py
 │   │           └── users.py
 │   ├── core/
 │   │   ├── config.py
@@ -284,14 +444,20 @@ taskflow-api/
 │   │   ├── base.py
 │   │   └── session.py
 │   ├── models/
+│   │   ├── project.py
+│   │   ├── task.py
 │   │   └── user.py
 │   ├── schemas/
 │   │   ├── admin.py
+│   │   ├── project.py
+│   │   ├── task.py
 │   │   ├── token.py
 │   │   └── user.py
 │   ├── services/
 │   │   ├── admin_service.py
 │   │   ├── auth_service.py
+│   │   ├── project_service.py
+│   │   ├── task_service.py
 │   │   └── user_service.py
 │   └── main.py
 ├── tests/
@@ -303,7 +469,9 @@ taskflow-api/
 │   ├── test_login.py
 │   ├── test_main.py
 │   ├── test_profile.py
-│   └── test_security.py
+│   ├── test_projects.py
+│   ├── test_security.py
+│   └── test_tasks.py
 ├── .env.example
 ├── .gitignore
 ├── alembic.ini
@@ -311,18 +479,18 @@ taskflow-api/
 └── README.md
 ```
 
-Empty `__init__.py` files, local `.env`, virtual environments, and generated coverage output are omitted for readability. The migration filename shown for `e9e1baaf2074` should match the generated file in your local `alembic/versions` directory.
+Empty `__init__.py` files, local `.env`, the virtual environment, and generated coverage output are omitted for readability. Migration file names correspond to the revisions described in the project.
 
 | Directory | Responsibility |
 |-----------|----------------|
 | `app/api` | API routers and shared authentication/authorization dependencies |
-| `app/core` | Application configuration, password security, JWT utilities |
-| `app/db` | SQLAlchemy engine, database sessions, and declarative base |
-| `app/models` | ORM database models |
+| `app/core` | Configuration, password security, and JWT utilities |
+| `app/db` | SQLAlchemy engine, sessions, and declarative base |
+| `app/models` | User, project, and task ORM models |
 | `app/schemas` | Request validation and response models |
-| `app/services` | Registration, login, profile, and administrative business logic |
+| `app/services` | Business logic, owner-scoped database operations, and administrative services |
 | `alembic` | Version-controlled PostgreSQL schema migrations |
-| `tests` | Automated testing and reusable fixtures |
+| `tests` | Automated tests, SQLite fixtures, and database behavior checks |
 
 ## Installation
 
@@ -392,7 +560,22 @@ alembic upgrade head
 alembic current
 ```
 
-The first migration creates `users`; the second adds optional `full_name` and `role` (default `user`). For the development state described here, the latest revision is `e9e1baaf2074`.
+The Alembic migration chain is:
+
+| Revision | Change |
+|----------|--------|
+| `b50570e674cd` | Create `users` |
+| `e9e1baaf2074` | Add user `full_name` and `role` |
+| `3ef95812025f` | Create `projects` |
+| `94f69fd864b7` | Create `tasks` with cascading project foreign key |
+
+**Expected migration head as of November 24, 2026:** `94f69fd864b7`.
+
+To verify schema consistency after applying migrations:
+
+```powershell
+alembic check
+```
 
 ### 6. Run the API
 
@@ -425,6 +608,8 @@ python -m pytest tests/test_login.py -v
 python -m pytest tests/test_profile.py -v
 python -m pytest tests/test_admin.py -v
 python -m pytest tests/test_edge_cases.py -v
+python -m pytest tests/test_projects.py -v
+python -m pytest tests/test_tasks.py -v
 ```
 
 Measure statement and branch coverage:
@@ -435,17 +620,17 @@ python -m pytest --cov=app --cov-branch --cov-report=term-missing
 
 ### Latest Verified Local Test Run
 
-As of **November 22, 2026**, the local test run reported:
+As of **November 24, 2026**, the local test run reported:
 
 | Metric | Result |
 |--------|--------|
-| Tests | **48 passed**, 0 failed |
-| Coverage | **100%** |
-| Statements | **279 total, 0 missed** |
-| Branches | **32 total, 0 missed / partially covered** |
-| Warnings | 1 non-failing dependency deprecation warning |
+| Tests | **123 passed**, 0 failed |
+| Combined statement and branch coverage | **100%** |
+| Statements | **551 total, 0 missed** |
+| Branches | **84 total, 0 missed / partially covered** |
+| Warnings | **1 non-failing warning** |
 
-The remaining warning concerned the Starlette/HTTPX test-client dependency. The short HMAC test-key warning was addressed by replacing the deliberately incorrect signing key with a longer test-only key.
+The source-specific warning message is not included in this summary; run pytest with warnings visible to inspect its current cause.
 
 **Coverage is not a correctness guarantee:** 100% measured coverage means that the instrumented statement and branch paths were exercised; it does not establish the absence of defects or production readiness.
 
@@ -457,6 +642,9 @@ The remaining warning concerned the Starlette/HTTPX test-client dependency. The 
 - `tests/test_profile.py` covers profile updates and forbidden field changes.
 - `tests/test_admin.py` covers role checks, pagination, status management, and protected admin accounts.
 - `tests/test_edge_cases.py` uses mocks to exercise integrity-error rollback, session cleanup, and JWT edge cases.
+- `tests/test_projects.py` covers owner-scoped project CRUD, validation, pagination, and cascade deletion.
+- `tests/test_tasks.py` covers task CRUD, pagination, validation, and cross-user/cross-project access.
+- The SQLite engine enables `PRAGMA foreign_keys=ON` so tests can exercise database-enforced cascade deletion.
 - PostgreSQL-specific integration tests are still planned because SQLite behavior is not identical to PostgreSQL behavior.
 
 Generated coverage outputs (`.coverage`, `htmlcov/`, `coverage.xml`) should be excluded from Git with `.gitignore`.
@@ -475,38 +663,80 @@ Generated coverage outputs (`.coverage`, `htmlcov/`, `coverage.xml`) should be e
 | `is_active` | Boolean | Whether the account is active |
 | `created_at` | Timestamp with time zone | Account creation timestamp |
 
-The email column has a unique index. All schema changes are applied through Alembic. No plaintext passwords are stored.
+The email column has a unique index. No plaintext passwords are stored.
+
+### `projects` Table
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `id` | Integer | Primary key |
+| `name` | VARCHAR(150) | Required project name |
+| `description` | Text, nullable | Optional description |
+| `status` | VARCHAR(20), default `active` | Project lifecycle status |
+| `owner_id` | Integer, indexed | Foreign key to `users.id` |
+| `created_at` | Timestamp with time zone | Project creation timestamp |
+
+`owner_id` is determined from the JWT-authenticated user, not from user-controlled JSON. The project status is restricted at the API layer to `active`, `completed`, or `archived`.
+
+### `tasks` Table
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `id` | Integer | Primary key |
+| `project_id` | Integer, indexed | Foreign key to `projects.id` |
+| `title` | VARCHAR(150) | Required task title |
+| `description` | Text, nullable | Optional description |
+| `status` | VARCHAR(20), default `todo` | Task progress status |
+| `priority` | VARCHAR(10), default `medium` | Task priority |
+| `due_date` | Timestamp with time zone, nullable | Optional due date |
+| `created_at` | Timestamp with time zone | Task creation timestamp |
+
+The `tasks.project_id` foreign key uses `ON DELETE CASCADE`, so a database-level project deletion also deletes its related tasks. Task status and priority values are validated by Pydantic.
+
+**Relationship:** `users (1) → (many) projects (1) → (many) tasks`.
+
+Schema changes are applied through Alembic. The database currently stores status and priority as strings, while the API restricts allowed values through request schemas.
 
 ## Development Roadmap
 
 ### Completed — Days 1–6
 
-- [x] FastAPI setup and modular API architecture
-- [x] Root, health-check, and Swagger/OpenAPI endpoints
-- [x] PostgreSQL, SQLAlchemy, and Alembic integration
-- [x] Users-table and profile/role migrations
-- [x] Environment-based settings and secret handling
-- [x] Registration, validation, and Argon2 password security
-- [x] OAuth2-compatible login and JWT access tokens
-- [x] Protected user-profile retrieval and updates
-- [x] Basic role-based authorization (`user`, `admin`)
-- [x] Admin user statistics and paginated user listing
-- [x] Admin-managed account activation and deactivation
-- [x] Protection against modifying admin accounts through status endpoint
-- [x] Isolated automated API, authorization, and edge-case tests
-- [x] Coverage tooling with statement and branch analysis
+- [x] FastAPI setup, modular API architecture, and health endpoint
+- [x] PostgreSQL, SQLAlchemy 2.0, session management, and Alembic
+- [x] Environment-based application configuration
+- [x] Registration, email validation, and Argon2 password hashing
+- [x] OAuth2 password-form login and signed JWT access tokens
+- [x] Protected profile retrieval and limited profile updates
+- [x] Basic `user`/`admin` authorization and admin user management
+- [x] Automated authentication, authorization, and edge-case testing
+- [x] Statement and branch coverage reporting
+
+### Completed — Day 7: Project Management
+
+- [x] `Project` model and `3ef95812025f` migration
+- [x] `ProjectCreate`, `ProjectUpdate`, and `ProjectResponse` schemas
+- [x] Create, list, retrieve, update, and delete owned projects
+- [x] Ownership checks, pagination, and input validation
+- [x] Project endpoint and cross-user access tests
+
+### Completed — Day 8: Task Management
+
+- [x] `Task` model and `94f69fd864b7` migration
+- [x] Task creation, retrieval, listing, updates, and deletion
+- [x] Task status and priority validation; optional due dates
+- [x] User- and project-scoped task ownership checks
+- [x] Database-enforced cascade deletion of tasks with projects
+- [x] Cascade test with SQLite foreign keys enabled
+- [x] **123 passing tests, 100% statement and branch coverage** on the latest local run
 
 ### Planned
 
 - [ ] Dedicated, secure admin-account provisioning workflow
-- [ ] Project and task database models and migrations
-- [ ] Project management endpoints
-- [ ] Task management and assignment workflows
-- [ ] User-project relationships and membership permissions
-- [ ] Expanded filtering, sorting, and pagination
-- [ ] More granular object-level authorization and permissions
-- [ ] Refresh-token and token-revocation strategy, if required
-- [ ] Rate limiting, account lockout policy, and additional auth hardening
+- [ ] Task assignment and project collaboration/membership features
+- [ ] Expanded filtering and sorting capabilities
+- [ ] More granular object-level authorization where collaboration is introduced
+- [ ] Refresh-token/revocation strategy if needed
+- [ ] Rate limiting, account lockout policy, and additional authentication hardening
 - [ ] PostgreSQL-specific integration tests and security reviews
 - [ ] Ruff linting and formatting
 - [ ] Docker containerization

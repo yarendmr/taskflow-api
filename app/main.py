@@ -1,7 +1,14 @@
 
 from fastapi import FastAPI
 
-from app.api.v1.routers import admin, auth, system, users
+from app.api.v1.routers import (
+    admin,
+    auth,
+    projects,
+    system,
+    tasks,
+    users,
+)
 from app.core.config import settings
 
 
@@ -15,3 +22,5 @@ app.include_router(system.router)
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(admin.router)
+app.include_router(projects.router)
+app.include_router(tasks.router)
