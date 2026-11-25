@@ -783,7 +783,7 @@ def test_delete_task_without_token(client):
 
 
 # -----------------------------------------
-# Day 9 - Task filtering tests
+# Task filtering tests
 # -----------------------------------------
 
 
@@ -1000,7 +1000,7 @@ def test_task_filters_cannot_bypass_ownership(
 
 
 # -----------------------------------------
-# Day 9 - Task search tests
+# Task search tests
 # -----------------------------------------
 
 
@@ -1234,7 +1234,7 @@ def test_search_requires_authentication(client):
 
 
 # -----------------------------------------
-# Day 9 - Task sorting tests
+# Task sorting tests
 # -----------------------------------------
 
 
@@ -1569,7 +1569,7 @@ def test_sorting_requires_authentication(client):
 
 
 # -----------------------------------------
-# Day 10 - Task Statistics Tests
+# Task Statistics Tests
 # -----------------------------------------
 
 
@@ -1909,7 +1909,7 @@ def test_task_stats_requires_authentication(client):
 
 
 # -----------------------------------------
-# Day 11 - Deadline Filtering and Sorting
+# Deadline Filtering and Sorting
 # -----------------------------------------
 
 

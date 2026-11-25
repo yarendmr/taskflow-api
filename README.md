@@ -4,13 +4,13 @@ A RESTful backend API for user, project, and task management, built with Python,
 
 ## Overview
 
-TaskFlow API is an incremental software engineering project focused on modular architecture, secure authentication and authorization, relational database design, and automated testing.
+TaskFlow API is a modular backend for organizing projects and tasks. It emphasizes secure authentication and authorization, relational data modeling, maintainable service boundaries, and automated testing.
 
 The API currently implements **user registration, JWT authentication, profile management, role-based administrator operations, project CRUD, task CRUD, task filtering and search, configurable task sorting, deadline-aware task retrieval, and project task statistics**. Project and task resources are protected by ownership checks, and deleting a project cascades to its tasks.
 
-**Project status:** In Development  
-**Current API version:** `0.1.0`
-**Documentation updated:** November 25, 2026 (through development Day 11)
+**Project status:** In Development
+
+**API version:** `0.1.0`
 
 ## Tech Stack
 
@@ -106,7 +106,7 @@ The API currently implements **user registration, JWT authentication, profile ma
 
 **Admin provisioning:** Public registration does **not** grant admin privileges, and this project does not yet provide an admin-provisioning API or CLI. Admin functionality is currently verified with temporary admin records created inside isolated tests. Do not alter production account roles manually as a substitute for a secure provisioning process.
 
-### Project Management (Day 7)
+### Project Management
 
 - Create, list, retrieve, partially update, and delete projects
 - Every project is owned by its creator (`owner_id` is set server-side)
@@ -116,7 +116,7 @@ The API currently implements **user registration, JWT authentication, profile ma
 - Request validation that prevents clients from setting or changing `owner_id`
 - `404 Not Found` for nonexistent projects and projects owned by another user
 
-### Task Management (Day 8)
+### Task Management
 
 - Create, list, retrieve, partially update, and delete tasks within an owned project
 - Task statuses: `todo`, `in_progress`, `done`
@@ -127,7 +127,7 @@ The API currently implements **user registration, JWT authentication, profile ma
 - Ownership checks on every task operation, with both project and task IDs checked
 - Automatic task deletion when the parent project is deleted (`ON DELETE CASCADE`)
 
-### Advanced Task Listing (Day 9)
+### Advanced Task Listing
 
 - Optional task status filter (`status=todo|in_progress|done`)
 - Optional priority filter (`priority=low|medium|high`)
@@ -138,7 +138,7 @@ The API currently implements **user registration, JWT authentication, profile ma
 - Combined filtering, searching, sorting, and pagination
 - Query validation and ownership checks on every list request
 
-### Project Task Statistics (Day 10)
+### Project Task Statistics
 
 - Owner-protected `GET /api/v1/projects/{project_id}/tasks/stats` endpoint
 - Task counts by status (`todo`, `in_progress`, `done`)
@@ -148,7 +148,7 @@ The API currently implements **user registration, JWT authentication, profile ma
 - Counts computed with one SQL aggregation query after the project ownership check
 - Statistics reflect task creation, updates, and deletion
 
-### Deadline Filtering and Sorting (Day 11)
+### Deadline Filtering and Sorting
 
 - `deadline=overdue`: incomplete tasks with a due date before the current UTC time
 - `deadline=due_soon`: incomplete tasks due between now and the next seven days, inclusive
@@ -173,9 +173,9 @@ The API currently implements **user registration, JWT authentication, profile ma
 - Task CRUD, pagination, input validation, and cross-user ownership tests
 - Task/project URL mismatch tests
 - Cascade-deletion test with SQLite foreign key enforcement enabled
-- Day 9 tests for combinations of status/priority filters, case-insensitive search, literal `%` and `_`, pagination, sort ordering, and access control
-- Day 10 tests for task statistics, aggregation accuracy, completion percentages, empty projects, and authorization
-- Day 11 tests for overdue/upcoming/undated tasks, completed-task exclusions, date ordering, null-last behavior, and cross-project isolation
+- Combined filtering and sorting tests for status/priority filters, case-insensitive search, literal `%` and `_`, pagination, and access control
+- Task statistics tests for aggregation accuracy, completion percentages, empty projects, and authorization
+- Deadline tests for overdue/upcoming/undated tasks, completed-task exclusions, date ordering, null-last behavior, and cross-project isolation
 
 ## API Endpoints
 
@@ -206,7 +206,7 @@ The API currently implements **user registration, JWT authentication, profile ma
 
 ### 1. Register a User
 
-**Request:** `POST /api/v1/auth/register`  
+**Request:** `POST /api/v1/auth/register`
 **Content type:** `application/json`
 
 ```json
@@ -233,7 +233,7 @@ The ID and timestamp are illustrative. Duplicate email addresses return `409 Con
 
 ### 2. Log In
 
-**Request:** `POST /api/v1/auth/login`  
+**Request:** `POST /api/v1/auth/login`
 **Content type:** `application/x-www-form-urlencoded`
 
 Form fields:
@@ -432,7 +432,7 @@ Updates accept only allowed task fields. Explicit `null` is rejected for `title`
 
 Task lists are scoped to the selected, owned project and ordered by ID by default. Pagination defaults to `offset=0`, `limit=20`, with `limit` constrained to 1–100. Invalid data returns `422`, absent tokens return `401`, and a task or project the user cannot access returns `404`. Successful task deletion returns `204 No Content`.
 
-#### Task Listing: Filters, Search, Sorting, and Pagination (Days 9 and 11)
+#### Task Listing: Filters, Search, Sorting, and Pagination
 
 All options are query parameters on the existing task-listing endpoint:
 
@@ -479,7 +479,7 @@ GET /api/v1/projects/1/tasks?deadline=no_due_date&priority=medium
 GET /api/v1/projects/1/tasks?search=security&status=todo&sort_by=priority&sort_order=desc
 ```
 
-#### Project Task Statistics (Day 10)
+#### Project Task Statistics
 
 ```http
 GET /api/v1/projects/1/tasks/stats
@@ -686,7 +686,7 @@ The Alembic migration chain is:
 | `3ef95812025f` | Create `projects` |
 | `94f69fd864b7` | Create `tasks` with cascading project foreign key |
 
-**Expected migration head through Day 11 (November 25, 2026):** `94f69fd864b7`. Days 9–11 changed query and service logic without altering database tables.
+**Current migration head:** `94f69fd864b7`. Task filtering, statistics, and deadline queries use existing database columns and do not require an additional migration.
 
 To verify schema consistency after applying migrations:
 
@@ -735,23 +735,17 @@ Measure statement and branch coverage:
 python -m pytest --cov=app --cov-branch --cov-report=term-missing
 ```
 
-### Recent Local Test Results
+### Test Suite Status
 
-| Milestone | Successful tests | Coverage evidence |
-|-----------|-----------------:|-------------------|
-| Day 8 (Nov 24, 2026) | 123 | 100% statement + branch coverage, 551 statements / 84 branches, none missed |
-| Day 9 (Nov 25, 2026) | 157 | 100% statement + branch coverage, 573 statements / 96 branches, none missed |
-| Days 10–11 | **182** | User confirmed final checks completed; the exact latest coverage figures were not pasted into this documentation |
+The latest local test run reported **182 passing automated tests**, covering authentication, authorization, project and task operations, task statistics, filtering, deadline behavior, and sorting.
 
-**Latest reported local test total: 182 passed.** The 182-test milestone includes task statistics, deadline filtering, and due-date sorting. To view the latest full report locally:
+Run the complete suite and inspect current statement/branch coverage:
 
 ```powershell
 python -m pytest --cov=app --cov-branch --cov-report=term-missing
 ```
 
-Earlier test runs showed a non-failing FastAPI/Starlette test-client deprecation warning. Warnings should be reviewed during dependency upgrades; do not upgrade individual dependencies solely to suppress a warning without verifying compatibility.
-
-**Coverage is not a correctness guarantee.** Coverage establishes which measured code paths were exercised, not the absence of defects or production readiness. The exact Day 11 coverage percentage should be updated from the project's most recent terminal report before it is advertised as a final measured figure.
+Coverage percentages are intentionally not hard-coded here: they should be read from the latest report rather than treated as permanent project properties. Passing tests and high coverage alone do not establish production readiness.
 
 ### Testing Strategy
 
@@ -818,62 +812,20 @@ Schema changes are applied through Alembic. The database currently stores status
 
 ## Development Roadmap
 
-### Completed — Days 1–6
+### Implemented
 
-- [x] FastAPI setup, modular API architecture, and health endpoint
-- [x] PostgreSQL, SQLAlchemy 2.0, session management, and Alembic
-- [x] Environment-based application configuration
-- [x] Registration, email validation, and Argon2 password hashing
-- [x] OAuth2 password-form login and signed JWT access tokens
-- [x] Protected profile retrieval and limited profile updates
-- [x] Basic `user`/`admin` authorization and admin user management
-- [x] Automated authentication, authorization, and edge-case testing
-- [x] Statement and branch coverage reporting
-
-### Completed — Day 7: Project Management
-
-- [x] `Project` model and `3ef95812025f` migration
-- [x] `ProjectCreate`, `ProjectUpdate`, and `ProjectResponse` schemas
-- [x] Create, list, retrieve, update, and delete owned projects
-- [x] Ownership checks, pagination, and input validation
-- [x] Project endpoint and cross-user access tests
-
-### Completed — Day 8: Task Management
-
-- [x] `Task` model and `94f69fd864b7` migration
-- [x] Task creation, retrieval, listing, updates, and deletion
-- [x] Task status and priority validation; optional due dates
-- [x] User- and project-scoped task ownership checks
-- [x] Database-enforced cascade deletion of tasks with projects
-- [x] Cascade test with SQLite foreign keys enabled
-- [x] **123 passing tests, 100% statement and branch coverage** on the latest local run
-
-### Completed — Day 9: Filtering, Search, and Sorting
-
-- [x] Task status and priority query filters
-- [x] Case-insensitive task-title search with wildcard escaping
-- [x] Sort by ID, creation timestamp, title, and logical priority
-- [x] Ascending/descending sort and stable ID-based tie-breaking
-- [x] Tests for validation, combined filters, pagination, and access control
-- [x] **157 passed, 100% statement and branch coverage** in the Day 9 run
-
-### Completed — Day 10: Task Analytics
-
-- [x] `TaskStatsResponse` schema with non-negative counts and bounded completion rate
-- [x] SQLAlchemy aggregate statistics with project ownership validation
-- [x] Owner-protected `/api/v1/projects/{project_id}/tasks/stats` route
-- [x] Empty-project, rounding, updates, deletion, isolation, and JWT tests
-- [x] 166-test milestone reported complete
-
-### Completed — Day 11: Deadline Management
-
-- [x] `overdue`, `due_soon`, and `no_due_date` filters
-- [x] UTC-based deadline comparisons and completed-task exclusions
-- [x] `due_date` ascending and descending sorting
-- [x] Null deadline values last and deterministic tie-breaking
-- [x] Combined filtering, search, and pagination support
-- [x] **182-test** milestone and final local checks reported complete
-- [x] No new Alembic migration needed
+- [x] Versioned FastAPI routes, configuration, and health checks
+- [x] PostgreSQL, SQLAlchemy ORM, and Alembic migrations
+- [x] User registration, password hashing, OAuth2 login, and JWT authentication
+- [x] Profile management and role-based administrator endpoints
+- [x] Ownership-protected project CRUD operations
+- [x] Ownership-protected task CRUD operations and cascading project deletion
+- [x] Task pagination, status/priority filters, and case-insensitive title search
+- [x] Configurable task sorting with deterministic ordering
+- [x] Project task counts and completion-rate analytics
+- [x] Deadline filters for overdue, upcoming, and undated tasks
+- [x] Due-date sorting with undated tasks placed last
+- [x] Automated API tests, authentication/authorization tests, and branch coverage reporting
 
 ### Planned
 
