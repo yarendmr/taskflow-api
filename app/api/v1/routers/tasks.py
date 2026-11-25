@@ -13,21 +13,37 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.task import TaskCreate, TaskUpdate, TaskResponse
+from app.schemas.task import (
+    TaskCreate,
+    TaskDeadlineFilter,
+    TaskPriority,
+    TaskResponse,
+    TaskSortBy,
+    TaskSortOrder,
+    TaskStatsResponse,
+    TaskStatus,
+    TaskUpdate,
+)
 from app.services.task_service import (
     ProjectNotFoundError,
     create_task,
     delete_project_task,
     get_project_task,
+    get_project_task_stats,
     list_project_tasks,
     update_project_task,
 )
+
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/tasks",
     tags=["Tasks"],
 )
 
+
+# --------------------------------------------------
+# 1. CREATE TASK
+# --------------------------------------------------
 
 @router.post(
     "",
@@ -63,6 +79,10 @@ def create_new_task(
         ) from exc
 
 
+# --------------------------------------------------
+# 2. LIST, FILTER, SEARCH AND SORT TASKS
+# --------------------------------------------------
+
 @router.get(
     "",
     response_model=list[TaskResponse],
@@ -77,10 +97,50 @@ def get_my_project_tasks(
         Session,
         Depends(get_db),
     ],
-    offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(
+        default=0,
+        ge=0,
+    ),
+    limit: int = Query(
+        default=20,
+        ge=1,
+        le=100,
+    ),
+    status_filter: TaskStatus | None = Query(
+        default=None,
+        alias="status",
+    ),
+    priority_filter: TaskPriority | None = Query(
+        default=None,
+        alias="priority",
+    ),
+    search_filter: str | None = Query(
+        default=None,
+        alias="search",
+        min_length=1,
+        max_length=100,
+    ),
+    sort_by: TaskSortBy = Query(
+        default="id",
+    ),
+    sort_order: TaskSortOrder = Query(
+        default="asc",
+    ),
+    deadline_filter: TaskDeadlineFilter | None = Query(
+        default=None,
+        alias="deadline",
+    ),
 ):
-    """List tasks in an owned project."""
+    """List owned project tasks with filters and sorting."""
+
+    if search_filter is not None:
+        search_filter = search_filter.strip()
+
+        if not search_filter:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Search must not be empty.",
+            )
 
     tasks = list_project_tasks(
         db=db,
@@ -88,6 +148,12 @@ def get_my_project_tasks(
         owner_id=current_user.id,
         offset=offset,
         limit=limit,
+        status_filter=status_filter,
+        priority_filter=priority_filter,
+        search_filter=search_filter,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        deadline_filter=deadline_filter,
     )
 
     if tasks is None:
@@ -98,6 +164,47 @@ def get_my_project_tasks(
 
     return tasks
 
+
+# --------------------------------------------------
+# 3. TASK STATISTICS
+# IMPORTANT: KEEP THIS BEFORE /{task_id}
+# --------------------------------------------------
+
+@router.get(
+    "/stats",
+    response_model=TaskStatsResponse,
+)
+def get_my_project_task_stats(
+    project_id: int,
+    current_user: Annotated[
+        User,
+        Depends(get_current_user),
+    ],
+    db: Annotated[
+        Session,
+        Depends(get_db),
+    ],
+):
+    """Return statistics for an owned project."""
+
+    stats = get_project_task_stats(
+        db=db,
+        project_id=project_id,
+        owner_id=current_user.id,
+    )
+
+    if stats is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found.",
+        )
+
+    return stats
+
+
+# --------------------------------------------------
+# 4. GET TASK DETAILS
+# --------------------------------------------------
 
 @router.get(
     "/{task_id}",
@@ -115,7 +222,7 @@ def get_task_details(
         Depends(get_db),
     ],
 ):
-    """Get a task belonging to an owned project."""
+    """Get a task from an owned project."""
 
     task = get_project_task(
         db=db,
@@ -132,6 +239,10 @@ def get_task_details(
 
     return task
 
+
+# --------------------------------------------------
+# 5. UPDATE TASK
+# --------------------------------------------------
 
 @router.patch(
     "/{task_id}",
@@ -150,7 +261,7 @@ def update_task(
         Depends(get_db),
     ],
 ):
-    """Update a task belonging to an owned project."""
+    """Update a task in an owned project."""
 
     task = update_project_task(
         db=db,
@@ -169,6 +280,10 @@ def update_task(
     return task
 
 
+# --------------------------------------------------
+# 6. DELETE TASK
+# --------------------------------------------------
+
 @router.delete(
     "/{task_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -185,7 +300,7 @@ def delete_task(
         Depends(get_db),
     ],
 ):
-    """Delete a task belonging to an owned project."""
+    """Delete a task from an owned project."""
 
     deleted = delete_project_task(
         db=db,

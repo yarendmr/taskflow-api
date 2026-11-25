@@ -24,6 +24,26 @@ TaskPriority = Literal[
 ]
 
 
+TaskSortBy = Literal[
+    "id",
+    "created_at",
+    "title",
+    "priority",
+    "due_date",
+]
+
+TaskSortOrder = Literal[
+    "asc",
+    "desc",
+]
+
+
+TaskDeadlineFilter = Literal[
+    "overdue",
+    "due_soon",
+    "no_due_date",
+]
+
 class TaskCreate(BaseModel):
     """Schema for creating a new task."""
 
@@ -124,3 +144,30 @@ class TaskResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TaskStatsResponse(BaseModel):
+    """Statistics for tasks in an owned project."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: int
+
+    total_tasks: int = Field(ge=0)
+
+    todo_tasks: int = Field(ge=0)
+
+    in_progress_tasks: int = Field(ge=0)
+
+    done_tasks: int = Field(ge=0)
+
+    low_priority_tasks: int = Field(ge=0)
+
+    medium_priority_tasks: int = Field(ge=0)
+
+    high_priority_tasks: int = Field(ge=0)
+
+    completion_rate: float = Field(
+        ge=0,
+        le=100,
+    )
